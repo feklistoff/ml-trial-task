@@ -2,137 +2,121 @@
 ml-trial-task
 =============================
 
-!!!! READ ME FIRST: Start by going to the "Local Development" section at end of this document !!!!
+The task:
+---------
 
-!!!! FIXME: You MUST edit this file, read it through *with thought* !!!!
+  Make a toy service that will accept a list of image URLs over ZeroMQ REQ/REP socket which will then fetch those URLs and run object detection/classification on them.
 
-!!!! FIXME: Check CI config file, should you change the repo pointer ?? !!!!
+  Once classification is done PUBlish the results per image over ZeroMQ.
 
-!!!! FIXME: Check pyroject.toml: repo pointer, license, authors etc !!!!
+  Provide unit tests (100% coverage not neccessary), provide working Dockerfile to run this. Extra points for a CLI tool that will parse URLs from CSV file, send the REQuest and then listen for the PUBlished messages printing results until all inferences have been received.
 
-ml trial task
+  https://pypi.org/project/datastreamservicelib/ (and the linked template) will help you a lot.
+
+  Choice of image classification models etc is up to you. Service must remain responsive to new REQuests while processing previous list of URLs.
+
+
+
+My solution
+-----------
+
+I've used the provided template to create a project. I've added a simple service that uses a pre-trained object detection model from torchvision to classify images.
+The service is built using aiohttp and ZeroMQ. The service is able to classify multiple images at the same time and it will return the results for each image as soon as they processed.
+Basedd on the task description, the project implements:
+
+- A service that accepts a list of image URLs over ZeroMQ REQ/REP socket
+- The service fetches the URLs and runs object detection on them
+- The service publishes the results per image over ZeroMQ
+- A CLI tool that takes a list of URLs or parses URLs from a CSV file, sends the request and listens for the published messages printing the results until all inferences have been received
+- A simple Dockerfile to run the service in a containerized environment (minimum working example)
+- Some unit tests for the service
+
+
+Local setup
+-----------
+
+To run the service locally, you need to have Python (3.9 or higher) installed.
+
+Create a virtual environment and activate it:
+    ```
+    python -m venv venv;
+    source venv/bin/activate
+    ```
+
+Install Poetry: https://python-poetry.org/docs/#installation
+
+You can install the dependencies using poetry:
+    ```
+    poetry install
+    ```
+
+Implemented stuff
+^^^^^^^^^^^^^^^^^^^^^
+
+``class ImagePredictionService`` - the service itself. It has two main methods:
+
+- ``predict`` - the main method that accepts a list of image URLs and spans a new task for each image to classify it.
+
+- ``process_image`` - the helper method that downloads the images, runs the object detection model on them and returns the results
+
+``console.py`` - the CLI tool that can be used to start the service and send requests to the service. It has the following commands:
+
+- ``run_service`` - starts the service
+
+- ``run_predict`` - sends a request to the service to classify a list of images
+
+Example usage
+^^^^^^^^^^^^^^
+
+To start the service run the following command:
+    ```
+    python src/ml_trial_task/console.py service -vv config.toml
+    ```
+
+In a separate terminal run the following command to start the CLI tool:
+    ```
+    python src/ml_trial_task/console.py predict -u "https://i.imgur.com/ivN5dal.jpeg, https://i.imgur.com/lcpzlEl.jpeg" config.toml
+    ```
+
+The example output:
+
+  Predict command response: PubSubDataMessage(... 'response': {'status': 'processing', 'num_images': 2}})
+
+  Subscribed and waiting for results
+
+  Received: PubSubDataMessage(topic=b'results', ... 'boxes': [[1675, 954, 1990, 1205], [2296, 416, 2457, 537], ...], 'labels': ['car', 'car', ...], 'scores': [0.9985753297805786, 0.9982516169548035, ...]})
+
+  Received: PubSubDataMessage(topic=b'results', ... 'boxes': [[1087, 2147, 1961, 4889], [795, 2170, 1499, 4831]], 'labels': ['person', 'person'], 'scores': [0.997600257396698, 0.996813952922821]})
+
+  All results received, exiting.
+
+Additionally, an example of a csv file with URLs is provided in the repository. You can use it to test the CLI tool with the following command:
+    ```
+    python src/ml_trial_task/console.py predict -c urls.csv config.toml
+    ```
 
 Docker
 ------
 
-For more controlled deployments and to get rid of "works on my computer" -syndrome, we always
-make sure our software works under docker.
+The Dockerfile is provided. This will let you test the service in a containerized environment.
 
-It's also a quick way to get started with a standard development environment.
+This is a simple minimum working Dockerfile that will run the service. In oreder to quickly test the service in a containerized environment, I didn't use they provided Dockerfile template(s).
 
-SSH agent forwarding
-^^^^^^^^^^^^^^^^^^^^
+The image can be built with the following command:
+    ```
+    docker build -t ml-trial-task .
+    ```
 
-We need buildkit_::
+The image can be run with the following command:
+    ```
+    docker run -it --rm --name ml_trial_task ml_trial_task
+    ```
 
-    export DOCKER_BUILDKIT=1
+The service will start running and listening for requests. Also, it will download the model.
 
-.. _buildkit: https://docs.docker.com/develop/develop-images/build_enhancements/
+After that in a separate terminal run the following command to start the CLI tool:
+    ```
+    docker exec -it ml_trial_task python src/ml_trial_task/console.py predict -u "https://i.imgur.com/ivN5dal.jpeg, https://i.imgur.com/lcpzlEl.jpeg" config.toml
+    ```
 
-And also the exact way for forwarding agent to running instance is different on OSX::
-
-    export DOCKER_SSHAGENT="-v /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock -e SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock"
-
-and Linux::
-
-    export DOCKER_SSHAGENT="-v $SSH_AUTH_SOCK:$SSH_AUTH_SOCK -e SSH_AUTH_SOCK"
-
-Creating a development container
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-!!! FIXME switch the 1234 port(s) to the port from src/ml_trial_task/defaultconfig.py !!!
-
-Build image, create container and start it::
-
-    docker build --progress plain --ssh default --target devel_shell -t ml_trial_task:devel_shell .
-    docker create --name ml_trial_task_devel -p 1234:1234 -v "$(pwd):/app" -it -v /tmp:/tmp $(echo $DOCKER_SSHAGENT) ml_trial_task:devel_shell
-    docker start -i ml_trial_task_devel
-
-pre-commit considerations
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-If working in Docker instead of native env you need to run the pre-commit checks in docker too::
-
-    docker exec -i ml_trial_task_devel /bin/bash -c "pre-commit install"
-    docker exec -i ml_trial_task_devel /bin/bash -c "pre-commit run --all-files"
-
-You need to have the container running, see above. Or alternatively use the docker run syntax but using
-the running container is faster::
-
-    docker run -it --rm -v "$(pwd):/app" ml_trial_task:devel_shell -c "pre-commit run --all-files"
-
-Test suite
-^^^^^^^^^^
-
-You can use the devel shell to run py.test when doing development, for CI use
-the "tox" target in the Dockerfile::
-
-    docker build --progress plain --ssh default --target tox -t ml_trial_task:tox .
-    docker run -it --rm -v "$(pwd):/app" $(echo $DOCKER_SSHAGENT) ml_trial_task:tox
-
-Production docker
-^^^^^^^^^^^^^^^^^
-
-!!! FIXME switch the 1234 port(s) to the port from src/ml_trial_task/defaultconfig.py !!!
-
-There's a "production" target as well for running the application and remember to change that architecture tag to arm64 if building on ARM::
-
-    docker build --progress plain --ssh default --target production -t ml_trial_task:amd64-latest .
-    docker run --rm -it --name ml_trial_task_config ml_trial_task:amd64-latest ml_trial_task --defaultconfig >config.toml
-    docker run -it --name ml_trial_task -v "$(pwd)/config.toml:/app/docker_config.toml" -p 1234:1234 -v /tmp:/tmp $(echo $DOCKER_SSHAGENT) ml_trial_task:amd64-latest
-
-
-Local Development
------------------
-
-!!! FIXME: Remove the repo init from this document after you have done it. !!!
-
-TLDR:
-
-- Create and activate a Python 3.11 virtualenv (assuming virtualenvwrapper)::
-
-    mkvirtualenv -p $(which python3.11) my_virtualenv
-
-- Init your repo (first create it on-line and make note of the remote URI)::
-
-    git init && git add .  # This should have been done automatically by cookiecutter
-    git commit -m 'Cookiecutter stubs'
-    git remote add origin MYREPOURI
-    git branch -m main
-    git push origin main
-
-- change to a branch::
-
-    git checkout -b my_branch
-
-- install Poetry: https://python-poetry.org/docs/#installation
-- Install project deps and pre-commit hooks::
-
-    poetry install
-    git add poetry.lock
-    pre-commit install
-    pre-commit run --all-files
-
-If you get weird errors about missing packages from pre-commit try running it with "poetry run pre-commit".
-
-- Ready to go, try the following::
-
-    ml_trial_task --defaultconfig >config.toml
-    ml_trial_task -vv config.toml
-
-Remember to activate your virtualenv whenever working on the repo, this is needed
-because pylint and mypy pre-commit hooks use the "system" python for now (because reasons).
-
-Running "pre-commit run --all-files" and "py.test -v" regularly during development and
-especially before committing will save you some headache.
-
-Monitoring ZMQ messgaes
-^^^^^^^^^^^^^^^^^^^^^^^
-
-Datastreamservicelib that we depend on provides a tool called testsubscriber::
-
-    testsubscriber -s ipc:///tmp/ml_trial_task_pub.sock -t "HEARTBEAT"
-
-set -t (--topic) to the prefix you want to filter for. If you expect ImageMessages add "-i" to make life less binary.
-
-Pro tip: -t "" give you ALL messages published in the socket, it can be useful but it is generally overwhelming.
+NOTE: The csv option probably would fail. I didn't have much time to do everything thoroughly and test everything.
