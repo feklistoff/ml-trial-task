@@ -68,12 +68,18 @@ Implemented stuff
 Example usage
 ^^^^^^^^^^^^^^
 
+First, create a config.toml file.
+
+    ```
+    ml_trial_task --defaultconfig > config.toml
+    ```
+
 To start the service run the following command:
     ```
     python src/ml_trial_task/console.py service -vv config.toml
     ```
 
-In a separate terminal run the following command to start the CLI tool:
+In a separate terminal run the following command to start the CLI tool (don't forget to activate the virtual environment):
     ```
     python src/ml_trial_task/console.py predict -u "https://i.imgur.com/ivN5dal.jpeg, https://i.imgur.com/lcpzlEl.jpeg" config.toml
     ```
@@ -129,6 +135,7 @@ Areas for Improvement
 ^^^^^^^^^^^^^^^^^^^^^
 
 While the service meets the basic requirements, there are several opportunities for enhancements:
+  - **Robust Error Handling:** More comprehensive error checking and recovery mechanisms could improve reliability, especially when dealing with unreliable network resources.
   - **Extensive Testing:** Expanding unit tests and integration tests would help ensure that the service handles edge cases gracefully.
   - **Performance Optimization:** For production use, performance profiling and optimization would be crucial, particularly if processing a large number of images concurrently.
   - **GPU usage:** The service could be optimized to use GPU acceleration when available for faster inference times.
