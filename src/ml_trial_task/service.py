@@ -1,111 +1,113 @@
 """Main classes for ml-trial-task"""
 
 from __future__ import annotations
+
 import asyncio
-from typing import cast, Union, Any
-from dataclasses import dataclass
+import io
 import logging
+from dataclasses import dataclass, field
+from typing import Any
 
-
-from datastreamcorelib.pubsub import PubSubMessage, Subscription
+import aiohttp
+import torch
 from datastreamcorelib.datamessage import PubSubDataMessage
-from datastreamservicelib.service import SimpleService
 from datastreamservicelib.reqrep import REPMixin, REQMixin
+from datastreamservicelib.service import SimpleService
+from PIL import Image
+from torchvision.models.detection import (
+    FasterRCNN_ResNet50_FPN_V2_Weights,
+    fasterrcnn_resnet50_fpn_v2,
+)
 
 LOGGER = logging.getLogger(__name__)
+# Weights for the model, see the torchvision.models.detection docs for more options
+WEIGHTS = FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT
+INFERENCE_THRESHOLD = 0.8
 
 
-# FIXME: Check this name is good (and PEP8 compliant)
-# NOTE: SimpleService does implicit magic, if you don't want that: inherit from BaseService instead
-# NOTE: if you need both REPMixin, REQMixin there is also FullService baseclass you can use instead of SimpleService
-# here listed separately for example. REPMixin also does a lot of implicit magick, you might not want to leave
-# it here unless you need it and definitely go read on how it works.
-# If/when you remove these mixins make sure to do something about the related tests too
 @dataclass
-class Ml_trial_taskService(REPMixin, REQMixin, SimpleService):
-    """Main class for ml-trial-task"""
+class ImagePredictionService(REPMixin, REQMixin, SimpleService):
+    """Service that handles image prediction requests and publishes results.
+    Main class for ml-trial-task"""
 
-    # This is here for completeness sake, if you do not need it remove it
-    async def teardown(self) -> None:
-        """Called once by the run method before exiting"""
-        # do something or remove this whole method
-        await asyncio.sleep(0.001)
-        # Remember to let SimpleServices own teardown work too.
-        await super().teardown()
-
-    # This is here for completeness sake, if you do not need it remove it
-    # Generally you want to use *reload* below for setup type things
-    async def setup(self) -> None:
-        """Called once by the run method before wating for exitcode to be set"""
-        # do something or remove this whole method
-        await asyncio.sleep(0.001)
-        # Remember to let SimpleServices own setup work too.
-        await super().setup()
-
-    async def echo(self, *args: Any) -> Any:
-        """return the args, this method is magically found by REPMixin and used to construct the REPly"""
-        _ = self
-        await asyncio.sleep(0.01)
-        return args
+    model: torch.nn.Module = field(default_factory=torch.nn.Module, repr=False)
 
     def reload(self) -> None:
         """Load configs, restart sockets"""
         super().reload()
-        # Do something
 
-        # Example task sending messages forever (using the inbuilt task tracker helper)
-        self.create_task(self.example_message_sender("footopic"), name="looping_sender")
-        self.create_task(self.example_request_task(), name="looping_requester")
-
-        # Example subscription for receiving messages (specifically DataMessages)
-        sub = Subscription(
-            self.config["zmq"]["pub_sockets"][0],  # Listen to our own heartbeat
-            "HEARTBEAT",
-            self.example_message_callback,
-            decoder_class=PubSubDataMessage,
-            # This is just an example, don't pass metadata you don't intent to use
-            metadata={"somekey": "somevalue"},
+        # Load the detection model (blocking call; if needed, offload to a thread)
+        self.model = fasterrcnn_resnet50_fpn_v2(
+            weights=WEIGHTS,
+            box_score_thresh=INFERENCE_THRESHOLD,
         )
-        self.psmgr.subscribe_async(sub)
+        self.model.eval()
+        LOGGER.info("Detection model loaded.")
 
-    async def example_request_task(self) -> None:
-        """Do a REQuest to the echo method every 1s"""
+    async def predict(self, urls: list[str]) -> dict[str, Any]:
+        """
+        Accepts a list of image URLs, spawns background tasks to process each,
+        and immediately returns an acknowledgement.
+        """
+        if not self.model:
+            return {"status": "error", "error": "Model not loaded"}
+        for url in urls:
+            self.create_task(self.process_image(url, self.model), name=f"processing-{url}")
+        return {"status": "processing", "num_images": len(urls)}
+
+    async def process_image(self, url: str, model: torch.nn.Module) -> None:  # pylint: disable=R0914
+        """Fetch the image from URL, run detection, and publish results."""
+        LOGGER.info("Processing image: {}".format(url))
+
+        # Fetch the image asynchronously using aiohttp
         try:
-            while True:
-                # Use our own REP socket to REQuest from since we know that to expect there
-                req_uri = self.config["zmq"]["rep_sockets"][0]
-                reply = await self.send_command(req_uri, "echo", "plink", "plom", raise_on_insane=True)
-                LOGGER.info("Got reply {}".format(reply))
-                await asyncio.sleep(1)
-        except asyncio.CancelledError:
-            # Handle cancellations gracefully
-            pass
-        return None
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers={"User-Agent": "service"}) as resp:
+                    if resp.status != 200:
+                        raise Exception(f"HTTP error: {resp.status}")  # pylint: disable=W0719
+                    img_bytes = await resp.read()
+        except Exception as e:  # pylint: disable=W0718
+            error_result = {"url": url, "error": f"Failed to fetch image: {str(e)}"}
+            await self.psmgr.publish_async(PubSubDataMessage(topic="results", data=error_result))
+            LOGGER.error("Error fetching {}: {}".format(url, e))
+            return
 
-    async def example_message_callback(self, sub: Subscription, msg: PubSubMessage) -> None:
-        """Callback for the example subscription"""
-        # We know it's actually datamessage but the broker deals with the parent type
-        msg = cast(PubSubDataMessage, msg)
-        LOGGER.info("Got {} (sub.metadata={})".format(msg, sub.metadata))
-        # TODO: Do something with the message we got, maybe send some procsessing results out.
-        outmsg = PubSubDataMessage(topic="bartopic")
-        # Fire-and-forget republish task
-        self.create_task(self.psmgr.publish_async(outmsg))
-
-    async def example_message_sender(self, topic: Union[bytes, str]) -> None:
-        """Send messages in a loop, the topic is just an example for passing typed arguments"""
-        msgno = 0
+        # Convert bytes to a PIL image
         try:
-            while self.psmgr.default_pub_socket and not self.psmgr.default_pub_socket.closed:
-                msgno += 1
-                msg = PubSubDataMessage(topic=topic)
-                msg.data = {
-                    "msgno": msgno,
-                }
-                LOGGER.debug("Publishing {}".format(msg))
-                await self.psmgr.publish_async(msg)
-                await asyncio.sleep(0.5)
-        except asyncio.CancelledError:
-            # Handle cancellations gracefully
-            pass
-        return None
+            image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        except Exception as e:  # pylint: disable=W0718
+            error_result = {"url": url, "error": f"Image open error: {str(e)}"}
+            await self.psmgr.publish_async(PubSubDataMessage(topic="results", data=error_result))
+            LOGGER.error("Error processing {}: {}".format(url, e))
+            return
+
+        # Preprocess the image using the transforms provided by the weights
+        preprocess = WEIGHTS.transforms()
+        input_tensor = preprocess(image)  # shape: [3, H, W]
+
+        # Run inference in a thread to avoid blocking the event loop
+        try:
+            # The model expects a list of tensors
+            predictions = await asyncio.to_thread(model, [input_tensor])
+        except Exception as e:  # pylint: disable=W0718
+            error_result = {"url": url, "error": f"Inference error: {str(e)}"}
+            await self.psmgr.publish_async(PubSubDataMessage(topic="results", data=error_result))
+            LOGGER.error("Inference error for {}: {}".format(url, e))
+            return
+
+        # Extract and convert prediction results
+        pred = predictions[0]
+        try:
+            boxes = pred["boxes"].detach().cpu().numpy().astype(int).tolist()
+            labels = pred["labels"].detach().cpu().numpy().tolist()
+            labels = [WEIGHTS.meta["categories"][i] for i in labels]
+            scores = pred["scores"].detach().cpu().numpy().tolist()
+        except Exception as e:  # pylint: disable=W0718
+            error_result = {"url": url, "error": f"Result parsing error: {str(e)}"}
+            await self.psmgr.publish_async(PubSubDataMessage(topic="results", data=error_result))
+            LOGGER.error("Parsing error for {}: {}".format(url, e))
+            return
+
+        result = {"url": url, "boxes": boxes, "labels": labels, "scores": scores}
+        await self.psmgr.publish_async(PubSubDataMessage(topic="results", data=result))
+        LOGGER.info("Published results for {}, labels={}".format(url, labels))
