@@ -29,7 +29,7 @@ Basedd on the task description, the project implements:
 - The service publishes the results per image over ZeroMQ
 - A CLI tool that takes a list of URLs or parses URLs from a CSV file, sends the request and listens for the published messages printing the results until all inferences have been received
 - A simple Dockerfile to run the service in a containerized environment (minimum working example)
-- Some unit tests for the service
+- Some unit tests (added a few tests to test_console.py)
 
 
 Local setup
@@ -120,3 +120,17 @@ After that in a separate terminal run the following command to start the CLI too
     ```
 
 NOTE: The csv option probably would fail. I didn't have much time to do everything thoroughly and test everything.
+
+
+Reflection
+-----------
+
+Areas for Improvement
+^^^^^^^^^^^^^^^^^^^^^
+
+While the service meets the basic requirements, there are several opportunities for enhancements:
+  - **Extensive Testing:** Expanding unit tests and integration tests would help ensure that the service handles edge cases gracefully.
+  - **Performance Optimization:** For production use, performance profiling and optimization would be crucial, particularly if processing a large number of images concurrently.
+  - **GPU usage:** The service could be optimized to use GPU acceleration when available for faster inference times.
+
+Overall, the project demonstrates a working solution that leverages Python features to build a responsive, concurrent service.
