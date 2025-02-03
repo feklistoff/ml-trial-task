@@ -17,7 +17,7 @@ from datastreamservicelib.service import SimpleService
 from datastreamservicelib.compat import asyncio_eventloop_check_policy, asyncio_eventloop_get
 
 from ml_trial_task.defaultconfig import DEFAULT_CONFIG_STR
-from ml_trial_task.service import Ml_trial_taskService
+from ml_trial_task.service import ImagePredictionService
 
 
 # pylint: disable=W0621
@@ -50,7 +50,7 @@ class ExampleREQuester(REQMixin, SimpleService):
 
 
 @pytest_asyncio.fixture
-async def service_instance(nice_tmpdir: str) -> Ml_trial_taskService:
+async def service_instance(nice_tmpdir: str) -> ImagePredictionService:
     """Create a service instance for use with tests"""
     parsed = tomlkit.parse(DEFAULT_CONFIG_STR).unwrap()
     # On platforms other than windows, do not bind to TCP (and put the sockets into temp paths/ports)
@@ -66,7 +66,7 @@ async def service_instance(nice_tmpdir: str) -> Ml_trial_taskService:
     with open(configpath, "wt", encoding="utf-8") as fpntr:
         fpntr.write(tomlkit.dumps(parsed))
     # Instantiate service and return it
-    serv = Ml_trial_taskService(configpath)
+    serv = ImagePredictionService(configpath)
     return serv
 
 
@@ -110,7 +110,9 @@ async def requester_instance(nice_tmpdir: str) -> ExampleREQuester:
 
 
 @pytest_asyncio.fixture
-async def running_service_instance(service_instance: Ml_trial_taskService) -> AsyncGenerator[Ml_trial_taskService, None]:
+async def running_service_instance(
+    service_instance: ImagePredictionService,
+) -> AsyncGenerator[ImagePredictionService, None]:
     """Yield a running service instance, shut it down after the test"""
     task = asyncio.create_task(service_instance.run())
     # Yield a moment so setup can do it's thing
@@ -126,7 +128,7 @@ async def running_service_instance(service_instance: Ml_trial_taskService) -> As
         task.cancel()
     finally:
         # Clear alarms and default exception handlers
-        Ml_trial_taskService.clear_exit_alarm()
+        ImagePredictionService.clear_exit_alarm()
         asyncio.get_event_loop().set_exception_handler(None)
 
 
