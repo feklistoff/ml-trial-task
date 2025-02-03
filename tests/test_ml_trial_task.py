@@ -9,7 +9,7 @@ from datastreamcorelib.pubsub import Subscription, PubSubMessage
 
 
 from ml_trial_task import __version__
-from ml_trial_task.service import Ml_trial_taskService
+from ml_trial_task.service import ImagePredictionService
 from ml_trial_task.defaultconfig import DEFAULT_CONFIG_STR
 
 
@@ -29,7 +29,7 @@ def test_defaultconfig() -> None:
 
 
 @pytest.mark.asyncio
-async def test_service_starts_and_quits(service_instance: Ml_trial_taskService) -> None:
+async def test_service_starts_and_quits(service_instance: ImagePredictionService) -> None:
     """Make sure the service starts and does not immediately die"""
     serv = service_instance
     # Put it as a task in the eventloop (instead of running it as blocking via run_until_complete)
