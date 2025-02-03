@@ -3,14 +3,11 @@ name = "ml_trial_task"
 version = "0.1.0"
 description = "ml trial task"
 authors = ["Andrei Feklistov <a.a.feklistov@gmail.com>"]
-# FIXME: Doublecheck these values
-#homepage = "https://gitlab.com/advian-oss/ml-trial-task/"
-#repository = "https://gitlab.com/advian-oss/ml-trial-task/"
-#license = "FIXME"
+repository = "https://github.com/feklistoff/ml-trial-task/"
 readme = "README.rst"
 
 [tool.poetry.scripts]
-ml_trial_task = "ml_trial_task.console:ml_trial_task_cli"
+ml_trial_task = "ml_trial_task.console:run_service"
 
 
 [tool.black]
@@ -60,6 +57,9 @@ branch = true
 python = "^3.9"
 datastreamservicelib = "^1.12"
 click = "^8.0"
+torch = "^2.6.0"
+torchvision = "^0.21.0"
+aiohttp = "^3.11.11"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
