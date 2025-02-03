@@ -89,6 +89,8 @@ def run_predict(configfile: Path, urls: str, csv_file: str) -> None:
     if csv_file:
         with open(csv_file, newline="", encoding="utf-8") as f:
             reader = csv.reader(f)
+            # Skip the header row
+            next(reader)
             for row in reader:
                 if row:
                     url_list.append(row[0])
