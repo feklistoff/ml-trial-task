@@ -11,7 +11,7 @@ from typing import Any
 import aiohttp
 import torch
 from datastreamcorelib.datamessage import PubSubDataMessage
-from datastreamservicelib.reqrep import REPMixin, REQMixin
+from datastreamservicelib.reqrep import REPMixin
 from datastreamservicelib.service import SimpleService
 from PIL import Image
 from torchvision.models.detection import (
@@ -26,7 +26,7 @@ INFERENCE_THRESHOLD = 0.8
 
 
 @dataclass
-class ImagePredictionService(REPMixin, REQMixin, SimpleService):
+class ImagePredictionService(REPMixin, SimpleService):
     """Service that handles image prediction requests and publishes results.
     Main class for ml-trial-task"""
 
@@ -43,6 +43,11 @@ class ImagePredictionService(REPMixin, REQMixin, SimpleService):
         )
         self.model.eval()
         LOGGER.info("Detection model loaded.")
+
+    async def echo(self, *args: Any) -> Any:
+        """return the args, this method kept for pytest"""
+        await asyncio.sleep(0.01)
+        return args
 
     async def predict(self, urls: list[str]) -> dict[str, Any]:
         """

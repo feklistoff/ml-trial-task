@@ -138,7 +138,7 @@ def run_predict(configfile: Path, urls: str, csv_file: str) -> None:
 
         # Wait until all expected messages are received.
         await done_event.wait()
-        click.echo("All results received; exiting.")
+        click.echo("All results received, exiting.")
 
     asyncio.run(predict_and_listen())
 
